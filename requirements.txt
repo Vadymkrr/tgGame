@@ -2,3 +2,4 @@ flask
 gunicorn
 aiogram
 python-dotenv
+flask-cors
