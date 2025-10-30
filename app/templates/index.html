@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Крестики-нолики</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+        * {margin:0;padding:0;box-sizing:border-box;}
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--tg-theme-bg-color, #0b0f1a);
+            color: var(--tg-theme-text-color, #ffffff);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container {max-width: 400px;margin: 0 auto;text-align: center;}
+        .header {margin-bottom: 20px;}
+        .header h1 {font-size: 22px;margin-bottom: 10px;}
+        .status {
+            font-size: 16px;
+            margin: 10px 0 20px;
+            padding: 10px;
+            border-radius: 10px;
+            background: var(--tg-theme-secondary-bg-color, #1a2238);
+        }
+        .controls {margin: 10px 0 20px;display:flex;flex-wrap:wrap;justify-content:center;gap:10px;}
+        .btn {
+            background: var(--tg-theme-button-color, #6d5bff);
+            color: var(--tg-theme-button-text-color, #ffffff);
+            border: none;
+            padding: 12px 16px;
+            border-radius: 10px;
+            font-size: 15px;
+            font-weight: 600;
+            cursor: pointer;
+            min-width: 130px;
+        }
+        .btn:disabled {opacity:0.5;cursor:not-allowed;}
+
+        .game-id {
+            margin: 10px 0 20px;
+            padding: 10px;
+            background: var(--tg-theme-secondary-bg-color, #1a2238);
+            border-radius: 10px;
+            font-family: monospace;
+            font-size:14px;
+            display:none;
+        }
+
+        .board {
+            display: none;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 10px;
+            margin: 20px auto;
+            max-width: 300px;
+        }
+        .cell {
+            aspect-ratio: 1;
+            background: var(--tg-theme-secondary-bg-color, #1a2238);
+            border: none;
+            border-radius: 10px;
+            font-size: 32px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #fff;
+        }
+        .cell.x { color: #ff3b30; }
+        .cell.o { color: #0af; }
+        .cell:disabled {opacity:.4;cursor:not-allowed;}
+
+        #newGameBtn {display:none;}
+    </style>
+</head>
+<body>
+<div class="container">
+    <div class="header">
+        <h1>🎮 Крестики-нолики</h1>
+        <div id="status" class="status">Создайте новую игру или присоединитесь к существующей</div>
+    </div>
+
+    <div class="controls">
+        <button class="btn" id="createBtn">Создать игру</button>
+        <button class="btn" id="joinBtn">Присоединиться</button>
+        <button class="btn" id="shareBtn" disabled>Поделиться</button>
+    </div>
+
+    <div id="gameIdBox" class="game-id">
+        ID игры: <span id="gameIdText"></span>
+    </div>
+
+    <div id="board" class="board"></div>
+
+    <div class="controls">
+        <button class="btn" id="newGameBtn">Новая игра</button>
+    </div>
+</div>
+
+<script>
+    const tg = window.Telegram?.WebApp;
+    if (tg) {
+        tg.expand();
+        tg.ready();
+    }
+
+    let currentGameId = null;
+    let currentPlayer = null;
+    let userId = (tg && tg.initDataUnsafe && tg.initDataUnsafe.user && tg.initDataUnsafe.user.id)
+        ? tg.initDataUnsafe.user.id
+        : Math.random().toString(36).substr(2,9);
+
+    // важное изменение:
+    // фронт теперь стучит в тот же домен, где крутится Flask
+    const API_BASE = "";
+
+    const statusEl = document.getElementById('status');
+    const boardEl  = document.getElementById('board');
+    const gameIdBox= document.getElementById('gameIdBox');
+    const gameIdText=document.getElementById('gameIdText');
+    const shareBtn = document.getElementById('shareBtn');
+    const newGameBtn=document.getElementById('newGameBtn');
+    const createBtn=document.getElementById('createBtn');
+    const joinBtn  =document.getElementById('joinBtn');
+
+    createBtn.onclick = createGame;
+    joinBtn.onclick   = promptJoin;
+    shareBtn.onclick  = shareGame;
+    newGameBtn.onclick= resetLocal;
+
+    function setStatus(msg) {
+        statusEl.textContent = msg;
+    }
+
+    function promptJoin() {
+        const gid = prompt("Введите ID игры:");
+        if (!gid) return;
+        joinGame(gid);
+    }
+
+    async function createGame() {
+        try {
+            const res = await fetch(`${API_BASE}/api/game/new`, {
+                method: 'POST',
+                headers: {'Content-Type':'application/json'}
+            });
+            const data = await res.json();
+            if (!data.success) {
+                setStatus("Ошибка создания игры");
+                return;
+            }
+            currentGameId = data.gameId;
+            gameIdText.textContent = currentGameId;
+            gameIdBox.style.display = 'block';
+            shareBtn.disabled = false;
+
+            await joinGame(currentGameId, true); // авто-вход создателя
+            setStatus("Игра создана. Ждём второго игрока…");
+        } catch (e) {
+            console.error(e);
+            setStatus("Ошибка сети при создании");
+        }
+    }
+
+    async function joinGame(gameId, isCreator=false) {
+        try {
+            const res = await fetch(`${API_BASE}/api/game/${gameId}/join`, {
+                method: 'POST',
+                headers: {'Content-Type':'application/json'},
+                body: JSON.stringify({ userId })
+            });
+            const data = await res.json();
+            if (!data.success) {
+                setStatus(data.error || "Не удалось присоединиться");
+                return;
+            }
+            currentGameId = gameId;
+            currentPlayer = data.player;
+            initBoard();
+            pollState(); // запускаем поллинг
+            setStatus(`Ты играешь за ${currentPlayer === 'X' ? '❌' : '⭕'}`);
+            gameIdText.textContent = currentGameId;
+            gameIdBox.style.display = 'block';
+            shareBtn.disabled = false;
+            newGameBtn.style.display = 'inline-block';
+        } catch (e) {
+            console.error(e);
+            setStatus("Ошибка сети при входе в игру");
+        }
+    }
+
+    function initBoard() {
+        boardEl.innerHTML = "";
+        boardEl.style.display = 'grid';
+        // делаем 9 кнопок
+        for (let r=0; r<3; r++){
+            for (let c=0; c<3; c++){
+                const btn=document.createElement("button");
+                btn.className="cell";
+                btn.dataset.row=r;
+                btn.dataset.col=c;
+                btn.onclick = () => doMove(r,c);
+                boardEl.appendChild(btn);
+            }
+        }
+    }
+
+    async function doMove(row,col) {
+        if (!currentGameId || !currentPlayer) return;
+        try {
+            const res = await fetch(`${API_BASE}/api/game/${currentGameId}/move`, {
+                method: 'POST',
+                headers: {'Content-Type':'application/json'},
+                body: JSON.stringify({
+                    row: row,
+                    col: col,
+                    player: currentPlayer
+                })
+            });
+            const data = await res.json();
+            if (data.success) {
+                renderState(data.gameState);
+            } else {
+                // например "не твой ход"
+                if (data.error) setStatus(data.error);
+            }
+        } catch (e) {
+            console.error(e);
+        }
+    }
+
+    function renderState(state){
+        // заполнить клетки
+        const cells = boardEl.getElementsByClassName('cell');
+        let idx=0;
+        for (let r=0;r<3;r++){
+            for (let c=0;c<3;c++){
+                const val = state.board[r][c]; // '' | X | O
+                const el = cells[idx++];
+                el.textContent = val === 'X' ? '❌' : val === 'O' ? '⭕' : '';
+                el.className = 'cell ' + val.toLowerCase();
+                el.disabled = (val !== '' || state.gameOver);
+            }
+        }
+
+        if (state.gameOver) {
+            if (state.winner === null || state.winner === undefined) {
+                setStatus("🤝 Ничья!");
+            } else {
+                const winMark = state.winner === 'X' ? '❌' : '⭕';
+                setStatus(`🎉 Победил ${winMark}`);
+            }
+        } else {
+            const turnMark = state.currentPlayer === 'X' ? '❌' : '⭕';
+            setStatus(`Ходит ${turnMark}`);
+        }
+    }
+
+    async function pollState() {
+        // простой поллинг каждые 2сек
+        setInterval(async () => {
+            if (!currentGameId) return;
+            try {
+                const res = await fetch(`${API_BASE}/api/game/${currentGameId}`);
+                const data = await res.json();
+                if (data.success) {
+                    renderState(data.gameState);
+                }
+            } catch(e){
+                console.error(e);
+            }
+        }, 2000);
+    }
+
+    function shareGame() {
+        if (currentGameId) {
+            // В проде можно сделать tg.MainButton или tg.showPopup().
+            alert("Отправь другу ID игры: " + currentGameId);
+        }
+    }
+
+    function resetLocal() {
+        currentGameId = null;
+        currentPlayer = null;
+        boardEl.style.display = 'none';
+        boardEl.innerHTML = '';
+        gameIdBox.style.display = 'none';
+        shareBtn.disabled = true;
+        newGameBtn.style.display = 'none';
+        setStatus("Создайте новую игру или присоединитесь к существующей");
+    }
+
+    // init
+    setStatus("Готов к игре");
+</script>
+</body>
+</html>
