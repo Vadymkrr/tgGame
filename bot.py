@@ -12,8 +12,8 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-BOT_TOKEN = os.getenv("8120362026:AAFQ3Sk-BimJjfT9Qskf7PZgIg56g8UxjIM")  # положи сюда токен в .env
-WEBAPP_URL = os.getenv("WEBAPP_URL")  # сюда положи публичный https, например https://xyz.ngrok-free.app/
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+WEBAPP_URL = os.getenv("WEBAPP_URL")
 
 bot = Bot(BOT_TOKEN)
 dp = Dispatcher()
