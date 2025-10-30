@@ -13,7 +13,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-WEBAPP_URL = os.getenv("WEBAPP_URL")
+WEBAPP_URL = os.getenv("WEBAPP_URL")  # <- сюда кидаем ссылку на фронт (GitHub Pages)
 
 bot = Bot(BOT_TOKEN)
 dp = Dispatcher()
@@ -24,10 +24,11 @@ async def cmd_start(message: Message):
         inline_keyboard=[[
             InlineKeyboardButton(
                 text="🎮 Играть в Крестики-Нолики",
-                web_app=WebAppInfo(url=WEBAPP_URL)  # открывает наш Flask front
+                web_app=WebAppInfo(url=WEBAPP_URL)
             )
         ]]
     )
+
     await message.answer(
         "ГЛАВНОЕ МЕНЮ\nВыберите действие:",
         reply_markup=kb
